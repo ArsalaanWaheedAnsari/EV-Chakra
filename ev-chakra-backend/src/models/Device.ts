@@ -3,11 +3,16 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface IDevice extends Document {
   deviceId: string;
   isCharging: boolean;
-  chargePower: number; // in kW
-  homeLoad: number; // in kW
-  maxCapacity: number; // in kW
-  todayCost: number; // in INR
-  carbonOffset: number; // in kg
+  chargePower: number;   // in kW
+  homeLoad: number;      // in kW
+  maxCapacity: number;   // in kW
+  todayCost: number;     // in INR
+  carbonOffset: number;  // in kg
+  voltage: number;       // in Volts (from MQTT telemetry)
+  current: number;       // in Amps (from MQTT telemetry)
+  temperature: number;   // in °C (from MQTT telemetry)
+  isOnline: boolean;     // true if heartbeat received within last 30s
+  lastHeartbeat: Date;   // last time telemetry was received
   lastUpdated: Date;
 }
 
@@ -23,11 +28,11 @@ const deviceSchema: Schema = new Schema({
   },
   chargePower: {
     type: Number,
-    default: 4.2,
+    default: 0,
   },
   homeLoad: {
     type: Number,
-    default: 3.8,
+    default: 0,
   },
   maxCapacity: {
     type: Number,
@@ -35,11 +40,31 @@ const deviceSchema: Schema = new Schema({
   },
   todayCost: {
     type: Number,
-    default: 47.20,
+    default: 0,
   },
   carbonOffset: {
     type: Number,
-    default: 2.1,
+    default: 0,
+  },
+  voltage: {
+    type: Number,
+    default: 0,
+  },
+  current: {
+    type: Number,
+    default: 0,
+  },
+  temperature: {
+    type: Number,
+    default: 0,
+  },
+  isOnline: {
+    type: Boolean,
+    default: false,
+  },
+  lastHeartbeat: {
+    type: Date,
+    default: null,
   },
   lastUpdated: {
     type: Date,

@@ -1,0 +1,4 @@
+.env
+ev-chakra/node_modules
+ev-chakra-mobile/node_modules
+ev-chakra-backend/node_modules

@@ -6,6 +6,9 @@ import waitlistRoutes from './routes/waitlist';
 import dashboardRoutes from './routes/dashboard';
 import authRoutes from './routes/auth';
 import adminRoutes from './routes/admin';
+import scheduleRoutes from './routes/schedule';
+import { initMqttService } from './services/mqttService';
+import { initScheduler } from './services/schedulerService';
 
 // Load env vars
 dotenv.config();
@@ -24,6 +27,7 @@ app.use('/api/waitlist', waitlistRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/schedule', scheduleRoutes);
 
 app.get('/api/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'ok', message: 'EV Chakra API is running' });
@@ -33,4 +37,10 @@ const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  
+  // Initialize MQTT after Express is ready
+  initMqttService();
+  
+  // Start the smart scheduler
+  initScheduler();
 });

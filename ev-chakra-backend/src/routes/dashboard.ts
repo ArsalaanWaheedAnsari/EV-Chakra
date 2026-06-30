@@ -1,9 +1,11 @@
 import { Router, Request, Response } from 'express';
 import Device from '../models/Device';
+import Telemetry from '../models/Telemetry';
+import { publishCommand } from '../services/mqttService';
 
 const router = Router();
 
-// Helper to seed a default device if none exists
+// Helper to get or create a device
 const getOrCreateDevice = async (deviceId: string) => {
   let device = await Device.findOne({ deviceId });
   if (!device) {
@@ -14,30 +16,12 @@ const getOrCreateDevice = async (deviceId: string) => {
 };
 
 // @route   GET /api/dashboard/:deviceId
-// @desc    Get current device telemetry and status
+// @desc    Get current device telemetry and status (real data from MQTT)
 // @access  Public (for MVP)
 router.get('/:deviceId', async (req: Request, res: Response): Promise<void> => {
   try {
     const deviceId = req.params.deviceId as string;
-    
-    // For the MVP simulation, we randomly fluctuate the home load here
-    // In a real scenario, the ESP32 would be PUT/POSTing this data to another endpoint.
     const device = await getOrCreateDevice(deviceId);
-    
-    // Simulate real-time home load fluctuation (between 1.0 and 6.0 kW)
-    const newHomeLoad = Math.max(1.0, Math.min(6.0, device.homeLoad + (Math.random() * 0.4 - 0.2)));
-    device.homeLoad = newHomeLoad;
-    
-    // Dynamic load balancing simulation logic
-    if (device.isCharging) {
-      const safeAvailable = (device.maxCapacity - device.homeLoad) * 0.9;
-      device.chargePower = Math.min(7.2, safeAvailable); // Max charger speed 7.2 kW
-    } else {
-      device.chargePower = 0;
-    }
-    
-    device.lastUpdated = new Date();
-    await device.save();
 
     res.status(200).json(device);
   } catch (err: any) {
@@ -47,27 +31,90 @@ router.get('/:deviceId', async (req: Request, res: Response): Promise<void> => {
 });
 
 // @route   POST /api/dashboard/:deviceId/toggle
-// @desc    Toggle charging status
+// @desc    Toggle charging status — also sends MQTT command to the device
 // @access  Public (for MVP)
 router.post('/:deviceId/toggle', async (req: Request, res: Response): Promise<void> => {
-    try {
-      const deviceId = req.params.deviceId as string;
-      const { isCharging } = req.body;
-      
-      const device = await getOrCreateDevice(deviceId);
-      
-      device.isCharging = isCharging;
-      if (!isCharging) {
-        device.chargePower = 0;
-      }
-      
-      await device.save();
-  
-      res.status(200).json(device);
-    } catch (err: any) {
-      console.error(err.message);
-      res.status(500).send('Server Error');
+  try {
+    const deviceId = req.params.deviceId as string;
+    const { isCharging } = req.body;
+    
+    const device = await getOrCreateDevice(deviceId);
+    
+    device.isCharging = isCharging;
+    if (!isCharging) {
+      device.chargePower = 0;
     }
+    
+    await device.save();
+
+    // Send MQTT command to the ESP32 (or simulator)
+    publishCommand(deviceId, {
+      command: 'SET_CHARGE',
+      isCharging,
+      maxAmps: isCharging ? 16 : 0,
+    });
+
+    res.status(200).json(device);
+  } catch (err: any) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+});
+
+// @route   POST /api/dashboard/:deviceId/command
+// @desc    Send an arbitrary MQTT command to a device
+// @access  Public (for MVP)
+router.post('/:deviceId/command', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const deviceId = req.params.deviceId as string;
+    const { command, ...params } = req.body;
+
+    if (!command) {
+      res.status(400).json({ message: 'Command is required' });
+      return;
+    }
+
+    const sent = publishCommand(deviceId, { command, ...params });
+
+    if (sent) {
+      res.status(200).json({ message: `Command '${command}' sent to ${deviceId}` });
+    } else {
+      res.status(503).json({ message: 'MQTT broker not connected' });
+    }
+  } catch (err: any) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+});
+
+// @route   GET /api/dashboard/:deviceId/history
+// @desc    Get telemetry history for charts (last N minutes)
+// @access  Public (for MVP)
+router.get('/:deviceId/history', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const deviceId = req.params.deviceId as string;
+    const minutes = parseInt(req.query.minutes as string) || 30; // Default last 30 min
+
+    const since = new Date(Date.now() - minutes * 60 * 1000);
+
+    const telemetry = await Telemetry.find({
+      deviceId,
+      timestamp: { $gte: since }
+    })
+      .sort({ timestamp: 1 })
+      .limit(500) // Cap at 500 data points
+      .select('voltage current power temperature timestamp -_id');
+
+    res.status(200).json({
+      deviceId,
+      minutes,
+      count: telemetry.length,
+      data: telemetry,
+    });
+  } catch (err: any) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
 });
 
 export default router;
